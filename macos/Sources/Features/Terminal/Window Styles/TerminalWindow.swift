@@ -252,6 +252,17 @@ class TerminalWindow: NSWindow {
     }
 
     override func addTitlebarAccessoryViewController(_ childViewController: NSTitlebarAccessoryViewController) {
+        // When tabs are presented in the sidebar we suppress the native top tab
+        // bar entirely. The tab group is still functional; only its presentation
+        // is hidden. We still add the accessory so AppKit's tab machinery is
+        // happy, but keep it hidden so no tab bar appears.
+        if derivedConfig.macosTabPosition == .left && isTabBar(childViewController) {
+            childViewController.identifier = Self.tabBarIdentifier
+            super.addTitlebarAccessoryViewController(childViewController)
+            childViewController.isHidden = true
+            return
+        }
+
         super.addTitlebarAccessoryViewController(childViewController)
 
         // Tab bar is attached as a titlebar accessory view controller (layout bottom). We
@@ -588,6 +599,7 @@ class TerminalWindow: NSWindow {
         let backgroundOpacity: Double
         let macosWindowButtons: Ghostty.MacOSWindowButtons
         let macosTitlebarStyle: Ghostty.Config.MacOSTitlebarStyle
+        let macosTabPosition: Ghostty.Config.MacOSTabPosition
         let windowCornerRadius: CGFloat
 
         init() {
@@ -597,6 +609,7 @@ class TerminalWindow: NSWindow {
             self.macosWindowButtons = .visible
             self.backgroundBlur = .disabled
             self.macosTitlebarStyle = .default
+            self.macosTabPosition = .top
             self.windowCornerRadius = 16
         }
 
@@ -607,6 +620,7 @@ class TerminalWindow: NSWindow {
             self.macosWindowButtons = config.macosWindowButtons
             self.backgroundBlur = config.backgroundBlur
             self.macosTitlebarStyle = config.macosTitlebarStyle
+            self.macosTabPosition = config.macosTabPosition
 
             // Set corner radius based on macos-titlebar-style
             // Native, transparent, and hidden styles use 16pt radius

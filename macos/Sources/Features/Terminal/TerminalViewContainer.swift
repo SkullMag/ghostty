@@ -86,7 +86,13 @@ class TerminalViewContainer: NSView {
 
 extension BaseTerminalController {
     var terminalViewContainer: TerminalViewContainer? {
-        window?.contentView as? TerminalViewContainer
+        // In the default layout the container is the window's content view. When
+        // the tabs sidebar is enabled the container is nested inside an
+        // NSSplitViewController, so we search the hierarchy as a fallback.
+        if let direct = window?.contentView as? TerminalViewContainer {
+            return direct
+        }
+        return window?.contentView?.firstDescendant(ofType: TerminalViewContainer.self)
     }
 }
 
