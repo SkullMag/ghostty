@@ -864,11 +864,17 @@ class BaseTerminalController: NSWindowController,
             window.title = computeTitle(
                 title: titleOverride,
                 bell: focusedSurface?.bell ?? false)
+            windowTitleDidChange()
             return
         }
 
         window.title = lastComputedTitle
+        windowTitleDidChange()
     }
+
+    /// Called after the window title is updated. Subclasses can override to
+    /// react (e.g. refresh a tabs sidebar). Default is a no-op.
+    func windowTitleDidChange() {}
 
     func pwdDidChange(to: URL?) {
         guard let window else { return }
@@ -1252,6 +1258,11 @@ class BaseTerminalController: NSWindowController,
         // I don't know if this is required anymore. We previously had a ref cycle between
         // the view and the window so we had to nil this out to break it but I think this
         // may now be resolved. We should verify that no memory leaks and we can remove this.
+        //
+        // When the tabs sidebar is enabled the content is owned by a
+        // contentViewController (an NSSplitViewController), so we must also clear
+        // that to break the same cycle.
+        window.contentViewController = nil
         window.contentView = nil
 
         // Make sure we clean up all our undos

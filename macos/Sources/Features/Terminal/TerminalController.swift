@@ -18,6 +18,13 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             return defaultValue
         }
 
+        // When tabs are shown in the sidebar, the titlebar-tabs styles would
+        // conflict by trying to place tabs in the titlebar. The sidebar wins, so
+        // we fall back to the transparent titlebar in that case.
+        if config.macosTabPosition == .left, config.macosTitlebarStyle == .tabs {
+            return "TerminalTransparentTitlebar"
+        }
+
         let nib = switch config.macosTitlebarStyle {
         case .native: "Terminal"
         case .hidden: "TerminalHiddenTitlebar"
@@ -57,6 +64,10 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
     /// The configuration derived from the Ghostty config so we don't need to rely on references.
     private(set) var derivedConfig: DerivedConfig
+
+    /// Backing model for the left tabs sidebar, non-nil only when
+    /// `macos-tab-position = left`.
+    private var tabSidebarModel: TabSidebarModel?
 
     /// The notification cancellable for focused surface property changes.
     private var surfaceAppearanceCancellables: Set<AnyCancellable> = []
@@ -561,6 +572,11 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     /// changes, when a window is closed, and when tabs are reordered
     /// with the mouse.
     func relabelTabs() {
+        // Keep the tabs sidebar (if enabled) in sync with the tab group. This
+        // is called when the key window changes, a window is closed, and when
+        // tabs are reordered.
+        tabSidebarModel?.refresh()
+
         // We only listen for frame changes if we have more than 1 window,
         // otherwise the accessory view doesn't matter.
         tabListenForFrame = window?.tabbedWindows?.count ?? 0 > 1
@@ -1088,7 +1104,32 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         // SwiftUI focus chain.
         container.initialContentSize = focusedSurface?.initialSize
 
-        window.contentView = container
+        if derivedConfig.macosTabPosition == .left {
+            // Host the terminal content alongside a native sidebar that lists
+            // the tabs in the group. The native top tab bar is suppressed
+            // separately (see TerminalWindow).
+            let model = TabSidebarModel(window: window)
+            self.tabSidebarModel = model
+            model.refresh()
+
+            let sidebarVC = NSHostingController(rootView: TerminalTabSidebarView(model: model))
+            let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarVC)
+            sidebarItem.minimumThickness = TabSidebarModel.minWidth
+            sidebarItem.maximumThickness = TabSidebarModel.maxWidth
+            sidebarItem.canCollapse = true
+
+            let mainVC = NSViewController()
+            mainVC.view = container
+            let mainItem = NSSplitViewItem(viewController: mainVC)
+
+            let splitVC = NSSplitViewController()
+            splitVC.addSplitViewItem(sidebarItem)
+            splitVC.addSplitViewItem(mainItem)
+
+            window.contentViewController = splitVC
+        } else {
+            window.contentView = container
+        }
 
         // If we have a default size, we want to apply it.
         if let defaultSize {
@@ -1397,8 +1438,17 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
     // MARK: - TerminalViewDelegate
 
+    override func windowTitleDidChange() {
+        super.windowTitleDidChange()
+        // Keep the active tab's title current in the sidebar.
+        tabSidebarModel?.refresh()
+    }
+
     override func focusedSurfaceDidChange(to: Ghostty.SurfaceView?) {
         super.focusedSurfaceDidChange(to: to)
+
+        // Refresh the sidebar so the active tab's title stays current.
+        tabSidebarModel?.refresh()
 
         // We always cancel our event listener
         surfaceAppearanceCancellables.removeAll()
@@ -1597,6 +1647,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         let backgroundColor: Color
         let macosWindowButtons: Ghostty.MacOSWindowButtons
         let macosTitlebarStyle: Ghostty.Config.MacOSTitlebarStyle
+        let macosTabPosition: Ghostty.Config.MacOSTabPosition
         let maximize: Bool
         let windowPositionX: Int16?
         let windowPositionY: Int16?
@@ -1605,6 +1656,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             self.backgroundColor = Color(NSColor.windowBackgroundColor)
             self.macosWindowButtons = .visible
             self.macosTitlebarStyle = .default
+            self.macosTabPosition = .top
             self.maximize = false
             self.windowPositionX = nil
             self.windowPositionY = nil
@@ -1614,6 +1666,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             self.backgroundColor = config.backgroundColor
             self.macosWindowButtons = config.macosWindowButtons
             self.macosTitlebarStyle = config.macosTitlebarStyle
+            self.macosTabPosition = config.macosTabPosition
             self.maximize = config.maximize
             self.windowPositionX = config.windowPositionX
             self.windowPositionY = config.windowPositionY
@@ -1672,7 +1725,9 @@ extension TerminalController {
             case .frame(let rect):
                 return window.frame != rect
             case .contentIntrinsicSize:
-                guard let view = window.contentView else {
+                // Compare against the terminal content view, which may be nested
+                // inside the tabs sidebar split view.
+                guard let view = window.terminalContentView ?? window.contentView else {
                     return false
                 }
 
@@ -1685,9 +1740,14 @@ extension TerminalController {
             case .frame(let rect):
                 window.setFrame(rect, display: true)
             case .contentIntrinsicSize:
-                guard let size = window.contentView?.intrinsicContentSize else {
+                guard let view = window.terminalContentView ?? window.contentView else {
                     return
                 }
+
+                // Size to the terminal's intrinsic size, plus the sidebar width
+                // so the terminal keeps its requested size when a sidebar is shown.
+                var size = view.intrinsicContentSize
+                size.width += window.terminalSidebarWidth
 
                 window.setContentSize(size)
                 window.constrainToScreen()

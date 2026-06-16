@@ -100,6 +100,19 @@ extension NSView {
         return nil
     }
 
+    /// Recursively finds and returns the first descendant view of the given type.
+    func firstDescendant<T: NSView>(ofType type: T.Type) -> T? {
+        for subview in subviews {
+            if let match = subview as? T {
+                return match
+            } else if let found = subview.firstDescendant(ofType: type) {
+                return found
+            }
+        }
+
+        return nil
+    }
+
     /// Recursively finds and returns descendant views that have the given class name.
     func descendants(withClassName name: String) -> [NSView] {
         var result = [NSView]()
