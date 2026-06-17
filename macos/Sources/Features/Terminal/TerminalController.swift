@@ -103,6 +103,11 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             object: nil)
         center.addObserver(
             self,
+            selector: #selector(onToggleTabPin),
+            name: .ghosttyToggleTabPin,
+            object: nil)
+        center.addObserver(
+            self,
             selector: #selector(onGotoTab),
             name: Ghostty.Notification.ghosttyGotoTab,
             object: nil)
@@ -1571,6 +1576,58 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
         // Ensure our window remains selected
         selectedWindow.makeKey()
+
+        NSAnimationContext.endGrouping()
+    }
+
+    @objc private func onToggleTabPin(notification: SwiftUI.Notification) {
+        guard let target = notification.object as? Ghostty.SurfaceView else { return }
+        guard target == self.focusedSurface else { return }
+        guard let window = self.window as? TerminalWindow else { return }
+        setPinned(!window.isPinned, for: window)
+    }
+
+    /// Set the pinned state of the given window's tab and reorder the tab group
+    /// so pinned tabs are kept at the front.
+    func setPinned(_ pinned: Bool, for window: NSWindow) {
+        guard let terminalWindow = window as? TerminalWindow else { return }
+        terminalWindow.isPinned = pinned
+        normalizePinnedTabOrder()
+        relabelTabs()
+    }
+
+    /// Reorder the tab group so that pinned tabs are kept at the front, preserving
+    /// the relative order within the pinned and unpinned groups. The currently
+    /// selected tab stays selected.
+    private func normalizePinnedTabOrder() {
+        guard let tabGroup = window?.tabGroup else { return }
+        let windows = tabGroup.windows
+        guard windows.count > 1 else { return }
+
+        func isPinned(_ w: NSWindow) -> Bool { (w as? TerminalWindow)?.isPinned ?? false }
+
+        // Stable partition: pinned windows first, then unpinned, each keeping
+        // their existing relative order.
+        let desired = windows.filter { isPinned($0) } + windows.filter { !isPinned($0) }
+
+        // NSWindow isn't Equatable; compare by identity. If nothing moved, bail.
+        guard !desired.elementsEqual(windows, by: { $0 === $1 }) else { return }
+
+        let selected = tabGroup.selectedWindow
+
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.current.duration = 0
+
+        // Rebuild the order by chaining each window after its predecessor. The
+        // first window is the anchor and never moves.
+        for i in 1..<desired.count {
+            let w = desired[i]
+            tabGroup.removeWindow(w)
+            desired[i - 1].addTabbedWindowSafely(w, ordered: .above)
+        }
+
+        // Preserve the original selection.
+        selected?.makeKey()
 
         NSAnimationContext.endGrouping()
     }

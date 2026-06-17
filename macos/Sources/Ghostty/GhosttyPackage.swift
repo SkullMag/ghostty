@@ -342,6 +342,9 @@ extension Notification.Name {
     static let ghosttyMoveTab = Notification.Name("com.mitchellh.ghostty.moveTab")
     static let GhosttyMoveTabKey = ghosttyMoveTab.rawValue
 
+    /// Pin or unpin the focused tab. Object is the surface being toggled.
+    static let ghosttyToggleTabPin = Notification.Name("com.mitchellh.ghostty.toggleTabPin")
+
     /// Close tab
     static let ghosttyCloseTab = Notification.Name("com.mitchellh.ghostty.closeTab")
 

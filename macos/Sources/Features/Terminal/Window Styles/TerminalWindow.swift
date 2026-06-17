@@ -68,6 +68,16 @@ class TerminalWindow: NSWindow {
         }
     }
 
+    /// Whether this window's tab is pinned. Pinned tabs are kept at the front of
+    /// the tab group. Setting this marks the window's restorable state as dirty;
+    /// reordering of the tab group is handled by `TerminalController`.
+    var isPinned: Bool = false {
+        didSet {
+            guard isPinned != oldValue else { return }
+            invalidateRestorableState()
+        }
+    }
+
     // MARK: NSWindow Overrides
 
     override var toolbar: NSToolbar? {
@@ -239,6 +249,13 @@ class TerminalWindow: NSWindow {
 
         guard let targetController = targetWindow.windowController as? BaseTerminalController else { return }
         targetController.promptTabTitle()
+    }
+
+    @objc private func togglePinFromContextMenu(_ sender: NSMenuItem) {
+        let targetWindow = sender.representedObject as? NSWindow ?? self
+        guard let targetController = targetWindow.windowController as? TerminalController,
+              let terminalWindow = targetWindow as? TerminalWindow else { return }
+        targetController.setPinned(!terminalWindow.isPinned, for: terminalWindow)
     }
 
     override func mergeAllWindows(_ sender: Any?) {
@@ -717,6 +734,7 @@ private struct TabColorIndicatorView: View {
 extension TerminalWindow {
     private static let closeTabsOnRightMenuItemIdentifier = NSUserInterfaceItemIdentifier("com.mitchellh.ghostty.closeTabsOnTheRightMenuItem")
     private static let changeTitleMenuItemIdentifier = NSUserInterfaceItemIdentifier("com.mitchellh.ghostty.changeTitleMenuItem")
+    private static let pinTabMenuItemIdentifier = NSUserInterfaceItemIdentifier("com.mitchellh.ghostty.pinTabMenuItem")
     private static let tabColorSeparatorIdentifier = NSUserInterfaceItemIdentifier("com.mitchellh.ghostty.tabColorSeparator")
 
     private static let tabColorPaletteIdentifier = NSUserInterfaceItemIdentifier("com.mitchellh.ghostty.tabColorPalette")
@@ -771,6 +789,7 @@ extension TerminalWindow {
     private func appendTabModifierSection(to menu: NSMenu, target: TerminalController?) {
         menu.removeItems(withIdentifiers: [
             Self.tabColorSeparatorIdentifier,
+            Self.pinTabMenuItemIdentifier,
             Self.changeTitleMenuItemIdentifier,
             Self.tabColorPaletteIdentifier
         ])
@@ -778,6 +797,15 @@ extension TerminalWindow {
         let separator = NSMenuItem.separator()
         separator.identifier = Self.tabColorSeparatorIdentifier
         menu.addItem(separator)
+
+        // Pin / Unpin Tab
+        let isPinned = (target?.window as? TerminalWindow)?.isPinned ?? false
+        let pinItem = NSMenuItem(title: isPinned ? "Unpin Tab" : "Pin Tab", action: #selector(TerminalWindow.togglePinFromContextMenu(_:)), keyEquivalent: "")
+        pinItem.identifier = Self.pinTabMenuItemIdentifier
+        pinItem.target = self
+        pinItem.representedObject = target?.window
+        pinItem.setImageIfDesired(systemSymbolName: isPinned ? "pin.slash" : "pin")
+        menu.addItem(pinItem)
 
         // Rename Tab...
         let changeTitleItem = NSMenuItem(title: "Rename Tab...", action: #selector(TerminalWindow.renameTabFromContextMenu(_:)), keyEquivalent: "")

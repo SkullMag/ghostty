@@ -594,6 +594,10 @@ pub const Action = union(enum) {
     /// found by running `ghostty +version`.
     toggle_tab_overview,
 
+    /// Pin or unpin the current tab. Pinned tabs are kept at the front of
+    /// the tab list. This is currently only implemented on macOS.
+    toggle_tab_pin,
+
     /// Change the title of the current focused surface via a pop-up prompt.
     prompt_surface_title,
 
@@ -1419,6 +1423,7 @@ pub const Action = union(enum) {
             .goto_tab,
             .move_tab,
             .toggle_tab_overview,
+            .toggle_tab_pin,
             .new_split,
             .goto_split,
             .goto_window,

@@ -515,6 +515,9 @@ extension Ghostty {
             case GHOSTTY_ACTION_MOVE_TAB:
                 return moveTab(app, target: target, move: action.action.move_tab)
 
+            case GHOSTTY_ACTION_TOGGLE_TAB_PIN:
+                return toggleTabPin(app, target: target)
+
             case GHOSTTY_ACTION_GOTO_TAB:
                 return gotoTab(app, target: target, tab: action.action.goto_tab)
 
@@ -1117,6 +1120,30 @@ extension Ghostty {
             default:
                 assertionFailure()
             }
+        }
+
+        private static func toggleTabPin(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s) -> Bool {
+                switch target.tag {
+                case GHOSTTY_TARGET_APP:
+                    Ghostty.logger.warning("toggle tab pin does nothing with an app target")
+                    return false
+
+                case GHOSTTY_TARGET_SURFACE:
+                    guard let surface = target.target.surface else { return false }
+                    guard let surfaceView = self.surfaceView(from: surface) else { return false }
+
+                    NotificationCenter.default.post(
+                        name: .ghosttyToggleTabPin,
+                        object: surfaceView
+                    )
+
+                default:
+                    assertionFailure()
+                }
+
+                return true
         }
 
         private static func moveTab(

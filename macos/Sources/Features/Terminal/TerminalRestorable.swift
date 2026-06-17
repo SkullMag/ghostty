@@ -76,6 +76,9 @@ final class TerminalRestorableState: TerminalRestorable {
     var titleOverride: String? {
         internalState.titleOverride
     }
+    var isPinned: Bool? {
+        internalState.isPinned
+    }
 
     /// Internal State we use to perform unit tests
     ///
@@ -166,6 +169,11 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         // Restore our tab color and avoid unnecessary `invalidateRestorableState` calls
         if let tabColor = state.tabColor {
             (window as? TerminalWindow)?.tabColor = tabColor
+        }
+
+        // Restore the pinned state
+        if let isPinned = state.isPinned {
+            (window as? TerminalWindow)?.isPinned = isPinned
         }
 
         // Restore the tab title override
