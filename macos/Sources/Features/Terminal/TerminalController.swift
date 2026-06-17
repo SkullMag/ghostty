@@ -558,6 +558,11 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             // Update our derived config
             self.derivedConfig = DerivedConfig(config)
 
+            // Keep the sidebar's queue limit in sync on reload. Enabling or
+            // disabling the section itself still only applies to new windows,
+            // but the item count can update live.
+            tabSidebarModel?.updateQueueLimit(Int(derivedConfig.macosTabSidebarQueueLimit))
+
             // If we have no surfaces in our window (is that possible?) then we update
             // our window appearance based on the root config. If we have surfaces, we
             // don't call this because focused surface changes will trigger appearance updates.
@@ -1124,7 +1129,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
             // Optionally surface the recent `queue` items in the sidebar.
             if derivedConfig.macosTabSidebarQueue {
-                model.enableQueue()
+                model.enableQueue(limit: Int(derivedConfig.macosTabSidebarQueueLimit))
             }
 
             let sidebarVC = NSHostingController(rootView: TerminalTabSidebarView(model: model))
@@ -1743,6 +1748,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         let macosTabPosition: Ghostty.Config.MacOSTabPosition
         let macosTabSidebarSimulators: Bool
         let macosTabSidebarQueue: Bool
+        let macosTabSidebarQueueLimit: UInt32
         let maximize: Bool
         let windowPositionX: Int16?
         let windowPositionY: Int16?
@@ -1754,6 +1760,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             self.macosTabPosition = .top
             self.macosTabSidebarSimulators = false
             self.macosTabSidebarQueue = false
+            self.macosTabSidebarQueueLimit = 10
             self.maximize = false
             self.windowPositionX = nil
             self.windowPositionY = nil
@@ -1766,6 +1773,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             self.macosTabPosition = config.macosTabPosition
             self.macosTabSidebarSimulators = config.macosTabSidebarSimulators
             self.macosTabSidebarQueue = config.macosTabSidebarQueue
+            self.macosTabSidebarQueueLimit = config.macosTabSidebarQueueLimit
             self.maximize = config.maximize
             self.windowPositionX = config.windowPositionX
             self.windowPositionY = config.windowPositionY

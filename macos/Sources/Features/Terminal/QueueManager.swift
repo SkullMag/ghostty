@@ -71,8 +71,10 @@ final class QueueManager: ObservableObject {
     /// The most recent tasks, newest first, capped at `maxItems`.
     @Published var tasks: [Task] = []
 
-    /// How many of the most recent tasks to surface.
-    private nonisolated static let maxItems = 10
+    /// How many of the most recent tasks to surface. Set from
+    /// `macos-tab-sidebar-queue-limit` when the feature is enabled; defaults to
+    /// 10 until then.
+    private var maxItems = 10
 
     /// The latest raw snapshot from the daemon, kept so the local tick timer can
     /// recompute elapsed times without another round-trip.
@@ -90,8 +92,12 @@ final class QueueManager: ObservableObject {
 
     /// Begin tracking the queue: open the subscription and start the elapsed
     /// re-tick timer. Idempotent; safe to call from every sidebar window that
-    /// enables the feature.
-    func start() {
+    /// enables the feature. `maxItems` caps how many recent tasks are surfaced;
+    /// the most recent call's value wins and is reflected immediately.
+    func start(maxItems: Int = 10) {
+        self.maxItems = max(1, maxItems)
+        rebuild()
+
         guard !started else { return }
         started = true
 
@@ -112,7 +118,7 @@ final class QueueManager: ObservableObject {
 
     /// Rebuild the published `tasks` from `latestWire` and the current time.
     private func rebuild() {
-        let display = latestWire.suffix(Self.maxItems).reversed().map { wire in
+        let display = latestWire.suffix(maxItems).reversed().map { wire in
             Task(
                 id: wire.id,
                 cmd: wire.cmd,

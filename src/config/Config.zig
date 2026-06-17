@@ -3302,6 +3302,16 @@ keybind: Keybinds = .{},
 /// Changing this option at runtime only applies to new windows.
 @"macos-tab-sidebar-queue": bool = false,
 
+/// The maximum number of recent items to show in the tab sidebar's "Queue"
+/// section (see `macos-tab-sidebar-queue`). Only the most recent items, newest
+/// first, are shown; older items are not listed. A value of 0 is treated as 1.
+///
+/// This only has an effect when `macos-tab-sidebar-queue = true`.
+///
+/// Unlike `macos-tab-sidebar-queue` itself, changing this option at runtime
+/// updates existing windows on the next config reload.
+@"macos-tab-sidebar-queue-limit": u32 = 10,
+
 /// Whether the proxy icon in the macOS titlebar is visible. The proxy icon
 /// is the icon that represents the folder of the current working directory.
 /// You can see this very clearly in the macOS built-in Terminal.app
