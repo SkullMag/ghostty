@@ -253,13 +253,12 @@ class TerminalWindow: NSWindow {
 
     override func addTitlebarAccessoryViewController(_ childViewController: NSTitlebarAccessoryViewController) {
         // When tabs are presented in the sidebar we suppress the native top tab
-        // bar entirely. The tab group is still functional; only its presentation
-        // is hidden. We still add the accessory so AppKit's tab machinery is
-        // happy, but keep it hidden so no tab bar appears.
+        // bar entirely. The tab group remains functional (selection, ordering,
+        // etc. all work without the bar). We do NOT add the accessory at all:
+        // adding it hidden still reserves titlebar height and leaves the tab
+        // overflow control, which prevents the sidebar from extending fully to
+        // the top of the window.
         if derivedConfig.macosTabPosition == .left && isTabBar(childViewController) {
-            childViewController.identifier = Self.tabBarIdentifier
-            super.addTitlebarAccessoryViewController(childViewController)
-            childViewController.isHidden = true
             return
         }
 

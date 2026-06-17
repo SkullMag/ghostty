@@ -1123,10 +1123,36 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             let mainItem = NSSplitViewItem(viewController: mainVC)
 
             let splitVC = NSSplitViewController()
+            // Use a borderless split view so there's no divider line between the
+            // sidebar and the terminal; the sidebar should blend seamlessly.
+            // isVertical = true keeps the panes side-by-side (sidebar on the left).
+            let borderlessSplit = BorderlessSplitView()
+            borderlessSplit.isVertical = true
+            splitVC.splitView = borderlessSplit
             splitVC.addSplitViewItem(sidebarItem)
             splitVC.addSplitViewItem(mainItem)
 
             window.contentViewController = splitVC
+
+            // Make the sidebar run full-height under the titlebar (like Finder/
+            // Music) rather than starting below a titlebar strip. With a full-size
+            // content view and a transparent titlebar, AppKit gives the sidebar
+            // split item the full-height treatment and floats the window buttons
+            // over it.
+            window.styleMask.insert(.fullSizeContentView)
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+
+            // AppKit only applies the macOS 26 "full-height sidebar" chrome
+            // (traffic lights floating over the sidebar, concentric corners,
+            // glass) when the window has a unified toolbar. Without one it's
+            // treated as a plain titled window. Attach an empty unified toolbar.
+            let toolbar = NSToolbar(identifier: "TerminalSidebarToolbar")
+            toolbar.showsBaselineSeparator = false
+            window.toolbar = toolbar
+            if #available(macOS 11.0, *) {
+                window.toolbarStyle = .unified
+            }
         } else {
             window.contentView = container
         }
