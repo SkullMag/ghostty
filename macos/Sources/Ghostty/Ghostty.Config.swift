@@ -378,6 +378,14 @@ extension Ghostty {
             return MacOSTabPosition(rawValue: String(cString: ptr)) ?? defaultValue
         }
 
+        var macosTabSidebarSimulators: Bool {
+            guard let config = self.config else { return false }
+            var v = false
+            let key = "macos-tab-sidebar-simulators"
+            _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
+            return v
+        }
+
         var macosTitlebarProxyIcon: MacOSTitlebarProxyIcon {
             let defaultValue = MacOSTitlebarProxyIcon.visible
             guard let config = self.config else { return defaultValue }

@@ -1117,6 +1117,11 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             self.tabSidebarModel = model
             model.refresh()
 
+            // Optionally surface booted iOS simulators in the sidebar.
+            if derivedConfig.macosTabSidebarSimulators {
+                model.enableSimulators()
+            }
+
             let sidebarVC = NSHostingController(rootView: TerminalTabSidebarView(model: model))
             let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarVC)
             sidebarItem.minimumThickness = TabSidebarModel.minWidth
@@ -1731,6 +1736,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         let macosWindowButtons: Ghostty.MacOSWindowButtons
         let macosTitlebarStyle: Ghostty.Config.MacOSTitlebarStyle
         let macosTabPosition: Ghostty.Config.MacOSTabPosition
+        let macosTabSidebarSimulators: Bool
         let maximize: Bool
         let windowPositionX: Int16?
         let windowPositionY: Int16?
@@ -1740,6 +1746,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             self.macosWindowButtons = .visible
             self.macosTitlebarStyle = .default
             self.macosTabPosition = .top
+            self.macosTabSidebarSimulators = false
             self.maximize = false
             self.windowPositionX = nil
             self.windowPositionY = nil
@@ -1750,6 +1757,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             self.macosWindowButtons = config.macosWindowButtons
             self.macosTitlebarStyle = config.macosTitlebarStyle
             self.macosTabPosition = config.macosTabPosition
+            self.macosTabSidebarSimulators = config.macosTabSidebarSimulators
             self.maximize = config.maximize
             self.windowPositionX = config.windowPositionX
             self.windowPositionY = config.windowPositionY

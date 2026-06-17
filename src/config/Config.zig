@@ -3276,6 +3276,19 @@ keybind: Keybinds = .{},
 /// Changing this option at runtime only applies to new windows.
 @"macos-tab-position": MacTabPosition = .top,
 
+/// Show a "Simulators" section in the left tab sidebar that lists the
+/// currently booted iOS simulators, each with an auto-assigned `⌘⌥<n>`
+/// keyboard shortcut (for the first nine) that brings that simulator's window
+/// to the front.
+///
+/// This only has an effect when `macos-tab-position = left`. It requires
+/// Xcode's `simctl` to enumerate simulators, and macOS Accessibility
+/// permission to raise a specific simulator window (without it, the feature
+/// degrades to simply activating the Simulator app).
+///
+/// Changing this option at runtime only applies to new windows.
+@"macos-tab-sidebar-simulators": bool = false,
+
 /// Whether the proxy icon in the macOS titlebar is visible. The proxy icon
 /// is the icon that represents the folder of the current working directory.
 /// You can see this very clearly in the macOS built-in Terminal.app
