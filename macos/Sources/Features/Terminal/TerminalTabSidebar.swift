@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -36,6 +37,19 @@ class TabSidebarModel: ObservableObject {
     /// seamless continuation of the terminal rather than blurring the desktop.
     @Published var terminalBackground: Color?
 
+    /// The booted iOS simulators, mirrored from the shared `SimulatorManager`.
+    /// Routing this through the per-window model (rather than observing the
+    /// shared manager directly in the view) guarantees the hosted SwiftUI view
+    /// re-renders when the list changes — the same path that reliably drives
+    /// tab updates.
+    @Published var simulators: [SimulatorManager.Simulator] = []
+
+    /// Whether to show the "Simulators" section (`macos-tab-sidebar-simulators`).
+    var showSimulators: Bool = false
+
+    /// Combine subscription mirroring the shared simulator list into `simulators`.
+    private var simulatorObservation: AnyCancellable?
+
     /// The window this sidebar belongs to. Weak because the window owns the
     /// controller which (transitively) owns this model.
     weak var window: NSWindow?
@@ -53,6 +67,20 @@ class TabSidebarModel: ObservableObject {
 
     init(window: NSWindow?) {
         self.window = window
+    }
+
+    /// Enable the "Simulators" section: start the shared manager and mirror its
+    /// booted-simulator list into this model so the sidebar updates live.
+    func enableSimulators() {
+        showSimulators = true
+        let manager = SimulatorManager.shared
+        manager.start()
+        simulators = manager.simulators
+        simulatorObservation = manager.$simulators
+            .receive(on: RunLoop.main)
+            .sink { [weak self] sims in
+                self?.simulators = sims
+            }
     }
 
     /// The windows in this tab's group, or just our window if there is no group.
@@ -297,6 +325,9 @@ struct TerminalTabSidebarView: View {
     /// Drives focus to the inline rename text field.
     @FocusState private var renameFieldFocused: Bool
 
+    /// The simulator row the pointer is currently over.
+    @State private var hoveredSimID: String?
+
     var body: some View {
         VStack(spacing: 0) {
             // A plain scrollable stack (not a List) is used deliberately: a
@@ -313,8 +344,19 @@ struct TerminalTabSidebarView: View {
                 ScrollView {
                     VStack(spacing: 0) {
                         LazyVStack(alignment: .leading, spacing: 4) {
+                            sectionHeader("Tabs")
+
                             ForEach(model.tabs) { tab in
                                 row(tab)
+                            }
+
+                            if model.showSimulators, !model.simulators.isEmpty {
+                                sectionHeader("Simulators")
+                                    .padding(.top, 8)
+
+                                ForEach(Array(model.simulators.enumerated()), id: \.element.id) { index, sim in
+                                    simulatorRow(sim, index: index)
+                                }
                             }
                         }
 
@@ -352,6 +394,55 @@ struct TerminalTabSidebarView: View {
         // The color carries the terminal's alpha, so glass still shows through
         // when background-opacity < 1, and it's solid when opacity is disabled.
         .background(model.terminalBackground ?? .clear)
+    }
+
+    /// A small uppercased section heading, matching the standard sidebar look.
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.system(.caption2, design: .rounded).weight(.semibold))
+            .opacity(0.5)
+            .padding(.horizontal, 10)
+            .padding(.top, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// A row for a booted simulator. The first nine get a ⌘⌥<n> shortcut badge.
+    private func simulatorRow(_ sim: SimulatorManager.Simulator, index: Int) -> some View {
+        let isHovered = hoveredSimID == sim.id
+        let shortcut = index < 9 ? "⌘⌥\(index + 1)" : nil
+
+        return HStack(spacing: 8) {
+            Text(shortcut ?? " ")
+                .font(.system(.caption, design: .rounded))
+                .opacity(0.7)
+                .frame(minWidth: 32, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(sim.name)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Text(sim.osVersion)
+                    .font(.caption2)
+                    .opacity(0.5)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(rowBackground(isSelected: false, isHovered: isHovered))
+        .contentShape(Rectangle())
+        .onHover { inside in
+            hoveredSimID = inside ? sim.id : (hoveredSimID == sim.id ? nil : hoveredSimID)
+        }
+        // Tap to bring the simulator window to the front. Like tab rows, this
+        // doesn't take keyboard focus away from the terminal.
+        .onTapGesture {
+            SimulatorManager.shared.focus(sim)
+        }
+        .help("Bring \(sim.name) to the front")
     }
 
     @ViewBuilder
