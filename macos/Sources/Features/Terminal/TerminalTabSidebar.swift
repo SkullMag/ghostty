@@ -23,6 +23,9 @@ class TabSidebarModel: ObservableObject {
         /// The display string for the keyboard shortcut that activates this tab
         /// (e.g. "⌘1"), or nil if no shortcut is bound.
         let shortcut: String?
+        /// Whether this tab is pinned. Pinned tabs are kept at the front of the
+        /// tab group.
+        let isPinned: Bool
     }
 
     /// The tabs in display order.
@@ -111,7 +114,8 @@ class TabSidebarModel: ObservableObject {
                 window: w,
                 title: title(for: w),
                 index: index,
-                shortcut: shortcut(for: index, config: config))
+                shortcut: shortcut(for: index, config: config),
+                isPinned: (w as? TerminalWindow)?.isPinned ?? false)
         }
 
         let selected = window.tabGroup?.selectedWindow ?? window
@@ -167,6 +171,15 @@ class TabSidebarModel: ObservableObject {
     /// Create a new tab in this window's tab group.
     func newTab() {
         (window?.windowController as? TerminalController)?.newWindowForTab(nil)
+    }
+
+    /// Pin or unpin the tab with the given id. Pinned tabs are reordered to the
+    /// front of the tab group by the controller.
+    func setPinned(_ id: ObjectIdentifier, pinned: Bool) {
+        guard let item = tabs.first(where: { $0.id == id }),
+              let controller = item.window.windowController as? TerminalController else { return }
+        controller.setPinned(pinned, for: item.window)
+        refresh()
     }
 
     private func focusSurface(in window: NSWindow) {
@@ -316,6 +329,14 @@ struct TerminalTabSidebarView: View {
                 .opacity(0.7)
                 .frame(minWidth: 24, alignment: .leading)
 
+            // Persistent indicator for pinned tabs, shown to the left of the title.
+            if tab.isPinned {
+                Image(systemName: "pin.fill")
+                    .imageScale(.small)
+                    .opacity(0.6)
+                    .help("Pinned")
+            }
+
             if editingID == tab.id {
                 TextField("", text: $draftTitle)
                     .textFieldStyle(.plain)
@@ -329,20 +350,6 @@ struct TerminalTabSidebarView: View {
             }
 
             Spacer(minLength: 0)
-
-            if editingID != tab.id, isHovered || isSelected {
-                Button(action: { startRename(tab) }) {
-                    Image(systemName: "pencil").imageScale(.small)
-                }
-                .buttonStyle(.borderless)
-                .help("Rename Tab")
-
-                Button(action: { model.close(tab.id) }) {
-                    Image(systemName: "xmark").imageScale(.small)
-                }
-                .buttonStyle(.borderless)
-                .help("Close Tab")
-            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -358,6 +365,9 @@ struct TerminalTabSidebarView: View {
             if editingID == nil { model.select(tab.id) }
         }
         .contextMenu {
+            Button(tab.isPinned ? "Unpin Tab" : "Pin Tab") {
+                model.setPinned(tab.id, pinned: !tab.isPinned)
+            }
             Button("Rename…") { startRename(tab) }
             Button("Close Tab") { model.close(tab.id) }
         }
