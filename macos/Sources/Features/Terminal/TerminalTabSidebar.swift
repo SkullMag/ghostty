@@ -53,6 +53,17 @@ class TabSidebarModel: ObservableObject {
     /// Combine subscription mirroring the shared simulator list into `simulators`.
     private var simulatorObservation: AnyCancellable?
 
+    /// The most recent queue tasks, mirrored from the shared `QueueManager`.
+    /// Routed through the per-window model for the same reason as `simulators`:
+    /// it guarantees the hosted SwiftUI view re-renders when the list changes.
+    @Published var queueTasks: [QueueManager.Task] = []
+
+    /// Whether to show the "Queue" section (`macos-tab-sidebar-queue`).
+    var showQueue: Bool = false
+
+    /// Combine subscription mirroring the shared queue task list into `queueTasks`.
+    private var queueObservation: AnyCancellable?
+
     /// The window this sidebar belongs to. Weak because the window owns the
     /// controller which (transitively) owns this model.
     weak var window: NSWindow?
@@ -83,6 +94,20 @@ class TabSidebarModel: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] sims in
                 self?.simulators = sims
+            }
+    }
+
+    /// Enable the "Queue" section: start the shared manager and mirror its
+    /// recent-task list into this model so the sidebar updates live.
+    func enableQueue() {
+        showQueue = true
+        let manager = QueueManager.shared
+        manager.start()
+        queueTasks = manager.tasks
+        queueObservation = manager.$tasks
+            .receive(on: RunLoop.main)
+            .sink { [weak self] tasks in
+                self?.queueTasks = tasks
             }
     }
 
@@ -371,6 +396,15 @@ struct TerminalTabSidebarView: View {
                                     simulatorRow(sim, index: index)
                                 }
                             }
+
+                            if model.showQueue, !model.queueTasks.isEmpty {
+                                sectionHeader("Queue")
+                                    .padding(.top, 8)
+
+                                ForEach(model.queueTasks) { task in
+                                    queueRow(task)
+                                }
+                            }
                         }
 
                         // Transparent catcher that fills the remaining space and
@@ -456,6 +490,56 @@ struct TerminalTabSidebarView: View {
             SimulatorManager.shared.focus(sim)
         }
         .help("Bring \(sim.name) to the front")
+    }
+
+    /// A read-only row for a queue task: a status symbol followed by the task's
+    /// label. There are no controls; this is a glanceable status view.
+    private func queueRow(_ task: QueueManager.Task) -> some View {
+        HStack(spacing: 8) {
+            Text(queueStatusSymbol(task.status))
+                .font(.system(.caption, design: .rounded))
+                .foregroundStyle(queueStatusColor(task.status))
+                .frame(minWidth: 16, alignment: .center)
+
+            Text(task.displayName)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 4)
+
+            Text(task.elapsed)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .help(task.cmd)
+    }
+
+    /// The status glyph, matching the queue TUI: pending ○, running ◐,
+    /// done ✓, failed ✗.
+    private func queueStatusSymbol(_ status: String) -> String {
+        switch status {
+        case "pending": return "○"
+        case "running": return "◐"
+        case "done": return "✓"
+        case "failed": return "✗"
+        default: return "?"
+        }
+    }
+
+    /// The tint for a status glyph: running draws attention, done is calm,
+    /// failed is alarming, pending is muted.
+    private func queueStatusColor(_ status: String) -> Color {
+        switch status {
+        case "running": return .accentColor
+        case "done": return .green
+        case "failed": return .red
+        default: return .secondary
+        }
     }
 
     @ViewBuilder

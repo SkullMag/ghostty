@@ -3289,6 +3289,19 @@ keybind: Keybinds = .{},
 /// Changing this option at runtime only applies to new windows.
 @"macos-tab-sidebar-simulators": bool = false,
 
+/// Show a "Queue" section in the left tab sidebar that lists the most recent
+/// items from the `queue` command queue (https://github.com/SkullMag/queue),
+/// each with its current status (pending, running, done, failed). This is a
+/// read-only view intended for glancing at the queue's progress; it has no
+/// controls.
+///
+/// This only has an effect when `macos-tab-position = left`. It reads the
+/// queue daemon's state over its Unix socket (`~/.queue/queue.sock`); when the
+/// daemon isn't running the section simply shows nothing.
+///
+/// Changing this option at runtime only applies to new windows.
+@"macos-tab-sidebar-queue": bool = false,
+
 /// Whether the proxy icon in the macOS titlebar is visible. The proxy icon
 /// is the icon that represents the folder of the current working directory.
 /// You can see this very clearly in the macOS built-in Terminal.app
