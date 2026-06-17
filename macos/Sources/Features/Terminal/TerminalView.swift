@@ -104,8 +104,13 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         .frame(idealWidth: lastFocusedSurface?.value?.initialSize?.width,
                                idealHeight: lastFocusedSurface?.value?.initialSize?.height)
                 }
-                // Ignore safe area to extend up in to the titlebar region if we have the "hidden" titlebar style
-                .ignoresSafeArea(.container, edges: ghostty.config.macosTitlebarStyle == .hidden ? .top : [])
+                // Ignore safe area to extend up into the titlebar region if we have the "hidden"
+                // titlebar style, or when tabs are in the left sidebar (the titlebar is empty and
+                // the window buttons sit over the sidebar, so the terminal can run full-height).
+                .ignoresSafeArea(
+                    .container,
+                    edges: (ghostty.config.macosTitlebarStyle == .hidden ||
+                            ghostty.config.macosTabPosition == .left) ? .top : [])
 
                 if let surfaceView = lastFocusedSurface?.value {
                     TerminalCommandPaletteView(
