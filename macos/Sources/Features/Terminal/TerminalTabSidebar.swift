@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Backing model for the native left sidebar that lists the tabs (windows) in a
 /// terminal's tab group. This is used when `macos-tab-position = left`.
@@ -169,6 +170,56 @@ class TabSidebarModel: ObservableObject {
         (window?.windowController as? TerminalController)?.newWindowForTab(nil)
     }
 
+    /// Reorder the underlying tab group so its windows match the given order of
+    /// tab ids. Called when a drag-to-reorder completes in the sidebar.
+    ///
+    /// Tabs are native windows in an `NSWindowTabGroup`, so reordering means
+    /// repositioning the windows within the group. The currently selected tab
+    /// is preserved across the reshuffle, and every window's sidebar (and tab
+    /// keyboard shortcut) is refreshed so all tabs in the group stay in sync.
+    func commitOrder(_ orderedIDs: [ObjectIdentifier]) {
+        guard let tabGroup = window?.tabGroup else { return }
+        let current = tabGroup.windows
+
+        // Map each id back to its window, then build the desired window order.
+        var byID: [ObjectIdentifier: NSWindow] = [:]
+        for w in current { byID[.init(w)] = w }
+        let desired = orderedIDs.compactMap { byID[$0] }
+
+        // Bail if the order is incomplete or unchanged; still refresh so the
+        // live-reordered SwiftUI state is reconciled with the real group order.
+        guard desired.count == current.count, desired != current else {
+            refreshGroup()
+            return
+        }
+
+        // Reposition windows one slot at a time. At step `targetIndex` every
+        // earlier slot already holds its final window, so removing `w` and
+        // reinserting it at `targetIndex` lands it correctly. removeWindow can
+        // disturb the selection, so we capture and restore it afterward.
+        let previouslySelected = tabGroup.selectedWindow
+        for (targetIndex, w) in desired.enumerated() {
+            guard tabGroup.windows.firstIndex(of: w) != targetIndex else { continue }
+            tabGroup.removeWindow(w)
+            tabGroup.insertWindow(w, at: targetIndex)
+        }
+        if let previouslySelected {
+            tabGroup.selectedWindow = previouslySelected
+        }
+
+        refreshGroup()
+    }
+
+    /// Refresh every window's sidebar model and tab keyboard shortcuts in this
+    /// tab group. Used after a reorder, which affects all tabs in the group,
+    /// not just this one.
+    private func refreshGroup() {
+        let windows = window?.tabGroup?.windows ?? [window].compactMap { $0 }
+        for w in windows {
+            (w.windowController as? TerminalController)?.relabelTabs()
+        }
+    }
+
     private func focusSurface(in window: NSWindow) {
         guard let controller = window.windowController as? BaseTerminalController,
               let surface = controller.focusedSurface else { return }
@@ -240,6 +291,9 @@ struct TerminalTabSidebarView: View {
     /// The working title while renaming.
     @State private var draftTitle: String = ""
 
+    /// The tab currently being dragged to reorder, if any.
+    @State private var draggingID: ObjectIdentifier?
+
     /// Drives focus to the inline rename text field.
     @FocusState private var renameFieldFocused: Bool
 
@@ -250,17 +304,38 @@ struct TerminalTabSidebarView: View {
             // first responder when clicked and steals keyboard focus from the
             // terminal — breaking keybindings. A plain view hierarchy with tap
             // gestures doesn't take keyboard focus, so the terminal keeps it.
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
-                    ForEach(model.tabs) { tab in
-                        row(tab)
+            // GeometryReader lets the content fill the viewport height so the
+            // empty area below the last row is still a drop target: dragging a
+            // tab into it drops the tab at the end. Without this, releasing a
+            // drag past the last row would hit no drop target, the reorder
+            // would never commit, and the row would snap back to its origin.
+            GeometryReader { geo in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        LazyVStack(alignment: .leading, spacing: 4) {
+                            ForEach(model.tabs) { tab in
+                                row(tab)
+                            }
+                        }
+
+                        // Transparent catcher that fills the remaining space and
+                        // moves the dragged tab to the end on drop.
+                        Color.clear
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                            .onDrop(
+                                of: [.text],
+                                delegate: TabReorderEndDropDelegate(
+                                    model: model,
+                                    draggingID: $draggingID))
                     }
+                    .padding(8)
+                    .frame(minHeight: geo.size.height, alignment: .top)
                 }
-                .padding(8)
+                // Keep the scroll content transparent so the native sidebar
+                // material (liquid glass on macOS 26) shows through.
+                .scrollContentBackground(.hidden)
             }
-            // Keep the scroll content transparent so the native sidebar material
-            // (liquid glass on macOS 26) shows through.
-            .scrollContentBackground(.hidden)
 
             Divider()
                 .opacity(0.5)
@@ -349,6 +424,8 @@ struct TerminalTabSidebarView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(rowBackground(isSelected: isSelected, isHovered: isHovered))
         .contentShape(Rectangle())
+        // Dim the row while it's the one being dragged to reorder.
+        .opacity(draggingID == tab.id ? 0.5 : 1)
         .onHover { inside in
             hoveredID = inside ? tab.id : (hoveredID == tab.id ? nil : hoveredID)
         }
@@ -357,6 +434,20 @@ struct TerminalTabSidebarView: View {
         .onTapGesture {
             if editingID == nil { model.select(tab.id) }
         }
+        // Drag to reorder. Disabled while inline-renaming so the text field
+        // keeps normal text-selection behavior. The drop delegate reorders the
+        // rows live; the new order is committed to the tab group on drop.
+        .onDrag {
+            guard editingID != tab.id else { return NSItemProvider() }
+            draggingID = tab.id
+            return NSItemProvider(object: tab.title as NSString)
+        }
+        .onDrop(
+            of: [.text],
+            delegate: TabReorderDropDelegate(
+                item: tab,
+                model: model,
+                draggingID: $draggingID))
         .contextMenu {
             Button("Rename…") { startRename(tab) }
             Button("Close Tab") { model.close(tab.id) }
@@ -417,5 +508,74 @@ struct TerminalTabSidebarView: View {
     private func cancelRename() {
         editingID = nil
         model.refocus()
+    }
+}
+
+// MARK: - Drag-to-reorder
+
+/// Drop delegate that reorders the sidebar's tab rows as a dragged tab is moved
+/// over them, then commits the final order to the native tab group on drop.
+///
+/// The reorder is performed live against the model's published `tabs` array so
+/// the rows animate into place under the pointer; `commitOrder` then makes the
+/// underlying `NSWindowTabGroup` match what the user sees.
+private struct TabReorderDropDelegate: DropDelegate {
+    /// The row this delegate is attached to (the potential drop target).
+    let item: TabSidebarModel.Item
+    let model: TabSidebarModel
+
+    /// The tab currently being dragged, shared with the view.
+    @Binding var draggingID: ObjectIdentifier?
+
+    func dropEntered(info: DropInfo) {
+        guard let draggingID, draggingID != item.id,
+              let from = model.tabs.firstIndex(where: { $0.id == draggingID }),
+              let to = model.tabs.firstIndex(where: { $0.id == item.id }) else { return }
+        withAnimation(.easeInOut(duration: 0.15)) {
+            model.tabs.move(
+                fromOffsets: IndexSet(integer: from),
+                toOffset: to > from ? to + 1 : to)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        defer { draggingID = nil }
+        model.commitOrder(model.tabs.map(\.id))
+        return true
+    }
+}
+
+/// Drop delegate for the empty area below the last tab row. Dragging into it
+/// moves the dragged tab to the end of the list; dropping commits the order.
+/// This makes "drag to the very bottom" land the tab last, instead of leaving
+/// the drag with no target (which would never commit and snap back).
+private struct TabReorderEndDropDelegate: DropDelegate {
+    let model: TabSidebarModel
+
+    @Binding var draggingID: ObjectIdentifier?
+
+    func dropEntered(info: DropInfo) {
+        guard let draggingID,
+              let from = model.tabs.firstIndex(where: { $0.id == draggingID }),
+              from != model.tabs.count - 1 else { return }
+        withAnimation(.easeInOut(duration: 0.15)) {
+            model.tabs.move(
+                fromOffsets: IndexSet(integer: from),
+                toOffset: model.tabs.count)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        defer { draggingID = nil }
+        model.commitOrder(model.tabs.map(\.id))
+        return true
     }
 }
