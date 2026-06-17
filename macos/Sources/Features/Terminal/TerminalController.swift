@@ -1122,6 +1122,11 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
                 model.enableSimulators()
             }
 
+            // Optionally surface the recent `queue` items in the sidebar.
+            if derivedConfig.macosTabSidebarQueue {
+                model.enableQueue()
+            }
+
             let sidebarVC = NSHostingController(rootView: TerminalTabSidebarView(model: model))
             let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarVC)
             sidebarItem.minimumThickness = TabSidebarModel.minWidth
@@ -1737,6 +1742,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         let macosTitlebarStyle: Ghostty.Config.MacOSTitlebarStyle
         let macosTabPosition: Ghostty.Config.MacOSTabPosition
         let macosTabSidebarSimulators: Bool
+        let macosTabSidebarQueue: Bool
         let maximize: Bool
         let windowPositionX: Int16?
         let windowPositionY: Int16?
@@ -1747,6 +1753,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             self.macosTitlebarStyle = .default
             self.macosTabPosition = .top
             self.macosTabSidebarSimulators = false
+            self.macosTabSidebarQueue = false
             self.maximize = false
             self.windowPositionX = nil
             self.windowPositionY = nil
@@ -1758,6 +1765,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             self.macosTitlebarStyle = config.macosTitlebarStyle
             self.macosTabPosition = config.macosTabPosition
             self.macosTabSidebarSimulators = config.macosTabSidebarSimulators
+            self.macosTabSidebarQueue = config.macosTabSidebarQueue
             self.maximize = config.maximize
             self.windowPositionX = config.windowPositionX
             self.windowPositionY = config.windowPositionY
