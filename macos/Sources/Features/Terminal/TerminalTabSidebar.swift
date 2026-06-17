@@ -98,17 +98,27 @@ class TabSidebarModel: ObservableObject {
     }
 
     /// Enable the "Queue" section: start the shared manager and mirror its
-    /// recent-task list into this model so the sidebar updates live.
-    func enableQueue() {
+    /// recent-task list into this model so the sidebar updates live. `limit`
+    /// caps how many recent items are shown (`macos-tab-sidebar-queue-limit`).
+    func enableQueue(limit: Int) {
         showQueue = true
         let manager = QueueManager.shared
-        manager.start()
+        manager.start(maxItems: limit)
         queueTasks = manager.tasks
         queueObservation = manager.$tasks
             .receive(on: RunLoop.main)
             .sink { [weak self] tasks in
                 self?.queueTasks = tasks
             }
+    }
+
+    /// Update the "Queue" section's item limit at runtime (e.g. on a config
+    /// reload). No-op if the section isn't enabled for this window. The shared
+    /// manager republishes its tail immediately, which flows back through the
+    /// existing observation.
+    func updateQueueLimit(_ limit: Int) {
+        guard showQueue else { return }
+        QueueManager.shared.start(maxItems: limit)
     }
 
     /// The windows in this tab's group, or just our window if there is no group.

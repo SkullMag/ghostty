@@ -394,6 +394,14 @@ extension Ghostty {
             return v
         }
 
+        var macosTabSidebarQueueLimit: UInt32 {
+            guard let config = self.config else { return 10 }
+            var v: UInt32 = 10
+            let key = "macos-tab-sidebar-queue-limit"
+            _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
+            return v
+        }
+
         var macosTitlebarProxyIcon: MacOSTitlebarProxyIcon {
             let defaultValue = MacOSTitlebarProxyIcon.visible
             guard let config = self.config else { return defaultValue }
