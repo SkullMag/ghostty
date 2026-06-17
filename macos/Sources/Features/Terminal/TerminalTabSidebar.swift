@@ -31,6 +31,10 @@ class TabSidebarModel: ObservableObject {
     /// The currently selected tab, if any.
     @Published var selectedID: ObjectIdentifier?
 
+    /// The terminal background color, used to tint the sidebar so it reads as a
+    /// seamless continuation of the terminal rather than blurring the desktop.
+    @Published var terminalBackground: Color?
+
     /// The window this sidebar belongs to. Weak because the window owns the
     /// controller which (transitively) owns this model.
     weak var window: NSWindow?
@@ -87,6 +91,17 @@ class TabSidebarModel: ObservableObject {
         }
 
         let config = (window.windowController as? BaseTerminalController)?.ghostty.config
+
+        // Tint the sidebar with the terminal's background color AND opacity so it
+        // matches the terminal exactly. preferredBackgroundColor already carries
+        // the configured background-opacity in its alpha; fall back to the config
+        // color + opacity when it isn't available yet (so we never go fully clear).
+        let colorWindow = window.tabGroup?.selectedWindow ?? window
+        if let tw = colorWindow as? TerminalWindow, let bg = tw.preferredBackgroundColor {
+            terminalBackground = Color(nsColor: bg)
+        } else if let config {
+            terminalBackground = config.backgroundColor.opacity(config.backgroundOpacity)
+        }
         let windows = windowsInGroup()
 
         tabs = windows.enumerated().map { offset, w in
@@ -176,6 +191,15 @@ class TabSidebarModel: ObservableObject {
     }
 }
 
+// MARK: - Borderless split view
+
+/// An `NSSplitView` with no visible divider, so the sidebar and terminal panes
+/// meet seamlessly without a divider line.
+class BorderlessSplitView: NSSplitView {
+    override var dividerColor: NSColor { .clear }
+    override var dividerThickness: CGFloat { 0 }
+}
+
 // MARK: - NSWindow helpers
 
 extension NSWindow {
@@ -227,27 +251,57 @@ struct TerminalTabSidebarView: View {
             // terminal — breaking keybindings. A plain view hierarchy with tap
             // gestures doesn't take keyboard focus, so the terminal keeps it.
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
+                LazyVStack(alignment: .leading, spacing: 4) {
                     ForEach(model.tabs) { tab in
                         row(tab)
                     }
                 }
                 .padding(8)
             }
+            // Keep the scroll content transparent so the native sidebar material
+            // (liquid glass on macOS 26) shows through.
+            .scrollContentBackground(.hidden)
 
             Divider()
+                .opacity(0.5)
 
             HStack {
-                Button(action: { model.newTab() }) {
-                    Image(systemName: "plus")
-                }
-                .buttonStyle(.borderless)
-                .help("New Tab")
+                newTabButton
                 Spacer()
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.vertical, 8)
         }
+        // Tint with the terminal's background color so the sidebar reads as a
+        // seamless continuation of the terminal rather than blurring the desktop.
+        // The color carries the terminal's alpha, so glass still shows through
+        // when background-opacity < 1, and it's solid when opacity is disabled.
+        .background(model.terminalBackground ?? .clear)
+    }
+
+    @ViewBuilder
+    private var newTabButton: some View {
+#if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            Button(action: { model.newTab() }) {
+                Image(systemName: "plus")
+            }
+            .buttonStyle(.glass)
+            .help("New Tab")
+        } else {
+            legacyNewTabButton
+        }
+#else
+        legacyNewTabButton
+#endif
+    }
+
+    private var legacyNewTabButton: some View {
+        Button(action: { model.newTab() }) {
+            Image(systemName: "plus")
+        }
+        .buttonStyle(.borderless)
+        .help("New Tab")
     }
 
     private func row(_ tab: TabSidebarModel.Item) -> some View {
@@ -290,14 +344,10 @@ struct TerminalTabSidebarView: View {
                 .help("Close Tab")
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .foregroundStyle(isSelected ? AnyShapeStyle(Color(nsColor: .alternateSelectedControlTextColor)) : AnyShapeStyle(.primary))
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(rowBackground(isSelected: isSelected, isHovered: isHovered))
-        )
+        .background(rowBackground(isSelected: isSelected, isHovered: isHovered))
         .contentShape(Rectangle())
         .onHover { inside in
             hoveredID = inside ? tab.id : (hoveredID == tab.id ? nil : hoveredID)
@@ -313,14 +363,43 @@ struct TerminalTabSidebarView: View {
         }
     }
 
-    private func rowBackground(isSelected: Bool, isHovered: Bool) -> Color {
-        if isSelected {
-            return Color(nsColor: .selectedContentBackgroundColor)
+    /// The row background. The selected row uses liquid glass on macOS 26 and a
+    /// solid selection fill on older systems. Hover uses a subtle wash.
+    @ViewBuilder
+    private func rowBackground(isSelected: Bool, isHovered: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+#if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            if isSelected {
+                shape
+                    .fill(.clear)
+                    .glassEffect(
+                        .regular.tint(.accentColor.opacity(0.45)).interactive(),
+                        in: shape)
+            } else {
+                shape.fill(isHovered ? Color.primary.opacity(0.06) : Color.clear)
+            }
+        } else {
+            legacyRowBackground(isSelected: isSelected, isHovered: isHovered, shape: shape)
         }
-        if isHovered {
-            return Color.primary.opacity(0.08)
+#else
+        legacyRowBackground(isSelected: isSelected, isHovered: isHovered, shape: shape)
+#endif
+    }
+
+    private func legacyRowBackground(
+        isSelected: Bool,
+        isHovered: Bool,
+        shape: RoundedRectangle
+    ) -> some View {
+        let color: Color = if isSelected {
+            Color(nsColor: .selectedContentBackgroundColor)
+        } else if isHovered {
+            Color.primary.opacity(0.08)
+        } else {
+            Color.clear
         }
-        return Color.clear
+        return shape.fill(color)
     }
 
     private func startRename(_ tab: TabSidebarModel.Item) {

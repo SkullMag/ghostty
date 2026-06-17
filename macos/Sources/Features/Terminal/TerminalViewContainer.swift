@@ -15,6 +15,14 @@ class TerminalViewContainer: NSView {
     }
 
     var windowCornerRadius: CGFloat? {
+        // In the left-sidebar layout the terminal content sits flush against the
+        // sidebar, so we don't want rounded corners (which would create a rounded
+        // notch and glass edge at the seam). The window itself still clips to its
+        // own rounded shape.
+        if (window as? TerminalWindow)?.derivedConfig.macosTabPosition == .left {
+            return 0
+        }
+
         guard let window, window.responds(to: Selector(("_cornerRadius"))) else {
             return nil
         }

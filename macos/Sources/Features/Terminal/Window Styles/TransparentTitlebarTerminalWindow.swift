@@ -80,6 +80,15 @@ class TransparentTitlebarTerminalWindow: TerminalWindow {
 
     @available(macOS 26.0, *)
     private func syncAppearanceTahoe(_ surfaceConfig: Ghostty.SurfaceView.DerivedConfig) {
+        // When tabs are in the left sidebar, the sidebar runs full-height under a
+        // fully transparent titlebar (the window buttons float over it). Keep the
+        // titlebar clear and the title hidden so the sidebar shows through to the
+        // very top, like Finder/Music.
+        if derivedConfig.macosTabPosition == .left {
+            applySidebarTitlebar()
+            return
+        }
+
         // When we have transparency, we need to set the titlebar background to match the
         // window background but with opacity. The window background is set using the
         // "preferred background color" property.
@@ -105,9 +114,39 @@ class TransparentTitlebarTerminalWindow: TerminalWindow {
         titlebarBackgroundView?.isHidden = true
     }
 
+    /// Force a fully transparent, empty titlebar for the left sidebar layout.
+    private func applySidebarTitlebar() {
+        titleVisibility = .hidden
+        titlebarAppearsTransparent = true
+        // Clear the document proxy icon; the title/identity lives in the sidebar.
+        representedURL = nil
+        if !styleMask.contains(.fullSizeContentView) {
+            styleMask.insert(.fullSizeContentView)
+        }
+        if let titlebarView = titlebarContainer?.firstDescendant(withClassName: "NSTitlebarView") {
+            titlebarView.wantsLayer = true
+            titlebarView.layer?.backgroundColor = NSColor.clear.cgColor
+        }
+        titlebarBackgroundView?.isHidden = true
+    }
+
     @available(macOS 13.0, *)
     private func syncAppearanceVentura(_ surfaceConfig: Ghostty.SurfaceView.DerivedConfig) {
         guard let titlebarContainer else { return }
+
+        // Left sidebar layout: keep the titlebar fully transparent and empty so the
+        // full-height sidebar shows through to the top.
+        if derivedConfig.macosTabPosition == .left {
+            titleVisibility = .hidden
+            titlebarAppearsTransparent = true
+            if !styleMask.contains(.fullSizeContentView) {
+                styleMask.insert(.fullSizeContentView)
+            }
+            titlebarContainer.wantsLayer = true
+            titlebarContainer.layer?.backgroundColor = NSColor.clear.cgColor
+            effectViewIsHidden = false
+            return
+        }
 
         // Setup the titlebar background color to match ours
         titlebarContainer.wantsLayer = true
