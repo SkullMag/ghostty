@@ -1120,6 +1120,16 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
             };
         },
 
+        .agent_state => |v| {
+            _ = self.rt_app.performAction(
+                .{ .surface = self },
+                .agent_state,
+                v,
+            ) catch |err| {
+                log.warn("apprt failed to report agent state err={}", .{err});
+            };
+        },
+
         .selection_scroll_tick => |active| {
             self.selection_scroll_active = active;
             try self.selectionScrollTick();

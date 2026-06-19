@@ -1132,6 +1132,11 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
                 model.enableQueue(limit: Int(derivedConfig.macosTabSidebarQueueLimit))
             }
 
+            // Optionally animate coding-agent (e.g. Claude Code) activity.
+            if derivedConfig.macosTabSidebarAgentStatus {
+                model.enableAgentStatus()
+            }
+
             let sidebarVC = NSHostingController(rootView: TerminalTabSidebarView(model: model))
             let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarVC)
             sidebarItem.minimumThickness = TabSidebarModel.minWidth
@@ -1749,6 +1754,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         let macosTabSidebarSimulators: Bool
         let macosTabSidebarQueue: Bool
         let macosTabSidebarQueueLimit: UInt32
+        let macosTabSidebarAgentStatus: Bool
         let maximize: Bool
         let windowPositionX: Int16?
         let windowPositionY: Int16?
@@ -1761,6 +1767,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             self.macosTabSidebarSimulators = false
             self.macosTabSidebarQueue = false
             self.macosTabSidebarQueueLimit = 10
+            self.macosTabSidebarAgentStatus = true
             self.maximize = false
             self.windowPositionX = nil
             self.windowPositionY = nil
@@ -1774,6 +1781,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             self.macosTabSidebarSimulators = config.macosTabSidebarSimulators
             self.macosTabSidebarQueue = config.macosTabSidebarQueue
             self.macosTabSidebarQueueLimit = config.macosTabSidebarQueueLimit
+            self.macosTabSidebarAgentStatus = config.macosTabSidebarAgentStatus
             self.maximize = config.maximize
             self.windowPositionX = config.windowPositionX
             self.windowPositionY = config.windowPositionY

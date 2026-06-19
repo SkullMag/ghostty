@@ -22,6 +22,32 @@ pub fn parse(parser: *Parser, _: ?u8) ?*Command {
         return null;
     };
     const ext = data[0..k];
+
+    // Ghostty extension: OSC 777;agent;<state> reports a coding agent's
+    // lifecycle state (e.g. from a Claude Code shell hook) so the surface
+    // can show an activity indicator. <state> is one of idle|working|
+    // waiting|done|end (end is treated as idle/cleared).
+    if (std.mem.eql(u8, ext, "agent")) {
+        const state_str = data[k + 1 .. data.len - 1];
+        const state: Command.AgentState.State =
+            if (std.mem.eql(u8, state_str, "working"))
+                .working
+            else if (std.mem.eql(u8, state_str, "waiting"))
+                .waiting
+            else if (std.mem.eql(u8, state_str, "done"))
+                .done
+            else if (std.mem.eql(u8, state_str, "idle") or
+            std.mem.eql(u8, state_str, "end"))
+                .idle
+            else {
+                log.warn("unknown agent state: {s}", .{state_str});
+                parser.state = .invalid;
+                return null;
+            };
+        parser.command = .{ .agent_state = .{ .state = state } };
+        return &parser.command;
+    }
+
     if (!std.mem.eql(u8, ext, "notify")) {
         log.warn("unknown rxvt extension: {s}", .{ext});
         parser.state = .invalid;
@@ -56,4 +82,41 @@ test "OSC: OSC 777 show desktop notification with title" {
     try testing.expect(cmd == .show_desktop_notification);
     try testing.expectEqualStrings(cmd.show_desktop_notification.title, "Title");
     try testing.expectEqualStrings(cmd.show_desktop_notification.body, "Body");
+}
+
+test "OSC: OSC 777 agent state working" {
+    const testing = std.testing;
+
+    var p: Parser = .init(null);
+
+    const input = "777;agent;working";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?.*;
+    try testing.expect(cmd == .agent_state);
+    try testing.expectEqual(Command.AgentState.State.working, cmd.agent_state.state);
+}
+
+test "OSC: OSC 777 agent state end maps to idle" {
+    const testing = std.testing;
+
+    var p: Parser = .init(null);
+
+    const input = "777;agent;end";
+    for (input) |ch| p.next(ch);
+
+    const cmd = p.end('\x1b').?.*;
+    try testing.expect(cmd == .agent_state);
+    try testing.expectEqual(Command.AgentState.State.idle, cmd.agent_state.state);
+}
+
+test "OSC: OSC 777 agent state unknown is invalid" {
+    const testing = std.testing;
+
+    var p: Parser = .init(null);
+
+    const input = "777;agent;bogus";
+    for (input) |ch| p.next(ch);
+
+    try testing.expect(p.end('\x1b') == null);
 }

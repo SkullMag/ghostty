@@ -3312,6 +3312,19 @@ keybind: Keybinds = .{},
 /// updates existing windows on the next config reload.
 @"macos-tab-sidebar-queue-limit": u32 = 10,
 
+/// Show an animated activity indicator on left-sidebar tab rows that are
+/// running a coding agent (e.g. Claude Code): a spinner while the agent is
+/// working, a pulsing dot while it is waiting for your input, and a brief
+/// check when it finishes.
+///
+/// The agent reports its state to Ghostty via an `OSC 777;agent;<state>`
+/// escape sequence, which a shell hook emits. See `dist/agent-hook` for a
+/// ready-made Claude Code hook installer.
+///
+/// This only has an effect when `macos-tab-position = left`. Changing this
+/// option at runtime only applies to new windows.
+@"macos-tab-sidebar-agent-status": bool = true,
+
 /// Whether the proxy icon in the macOS titlebar is visible. The proxy icon
 /// is the icon that represents the folder of the current working directory.
 /// You can see this very clearly in the macOS built-in Terminal.app

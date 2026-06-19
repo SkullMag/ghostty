@@ -611,6 +611,9 @@ extension Ghostty {
             case GHOSTTY_ACTION_PROGRESS_REPORT:
                 progressReport(app, target: target, v: action.action.progress_report)
 
+            case GHOSTTY_ACTION_AGENT_STATE:
+                agentState(app, target: target, v: action.action.agent_state)
+
             case GHOSTTY_ACTION_CONFIG_CHANGE:
                 configChange(app, target: target, v: action.action.config_change)
 
@@ -2062,6 +2065,29 @@ extension Ghostty {
                     } else {
                         surfaceView.progressReport = progressReport
                     }
+                }
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func agentState(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s,
+            v: ghostty_action_agent_state_s) {
+            switch target.tag {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("agent state does nothing with an app target")
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return }
+                guard let surfaceView = self.surfaceView(from: surface) else { return }
+
+                let state = Ghostty.Action.AgentState(c: v)
+                DispatchQueue.main.async {
+                    surfaceView.agentState = state
                 }
 
             default:

@@ -160,6 +160,11 @@ pub const Command = union(Key) {
     /// https://uapi-group.org/specifications/specs/osc_context/
     context_signal: parsers.context_signal.Command,
 
+    /// Coding agent (e.g. Claude Code) lifecycle state (OSC 777;agent).
+    /// Reported by a CLI agent via a shell hook so the surface can surface
+    /// an activity indicator. Ghostty-specific extension.
+    agent_state: AgentState,
+
     pub const SemanticPrompt = parsers.semantic_prompt.Command;
 
     pub const KittyClipboardProtocol = parsers.kitty_clipboard_protocol.OSC;
@@ -193,6 +198,7 @@ pub const Command = union(Key) {
             "kitty_text_sizing",
             "kitty_clipboard_protocol",
             "context_signal",
+            "agent_state",
         },
     );
 
@@ -228,6 +234,31 @@ pub const Command = union(Key) {
                     100,
                 )) else -1,
             };
+        }
+    };
+
+    pub const AgentState = struct {
+        pub const State = enum(c_int) {
+            idle,
+            working,
+            waiting,
+            done,
+
+            test "ghostty.h Command.AgentState.State" {
+                if (comptime build_options.artifact == .lib) return error.SkipZigTest;
+                try lib.checkGhosttyHEnum(State, "GHOSTTY_AGENT_STATE_");
+            }
+        };
+
+        state: State,
+
+        // sync with ghostty_action_agent_state_s
+        pub const C = extern struct {
+            state: c_int,
+        };
+
+        pub fn cval(self: AgentState) C {
+            return .{ .state = @intFromEnum(self.state) };
         }
     };
 
@@ -422,6 +453,7 @@ pub const Parser = struct {
             .kitty_text_sizing,
             .kitty_clipboard_protocol,
             .context_signal,
+            .agent_state,
             => {},
         }
 

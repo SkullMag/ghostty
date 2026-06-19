@@ -351,6 +351,10 @@ pub const Action = union(Key) {
     /// the tab list. Currently only implemented on macOS.
     toggle_tab_pin,
 
+    /// A coding agent (e.g. Claude Code) reported a lifecycle state change.
+    /// Currently only consumed on macOS (tab sidebar activity indicator).
+    agent_state: terminal.osc.Command.AgentState,
+
     /// Sync with: ghostty_action_tag_e
     pub const Key = enum(c_int) {
         quit,
@@ -420,6 +424,7 @@ pub const Action = union(Key) {
         readonly,
         copy_title_to_clipboard,
         toggle_tab_pin,
+        agent_state,
 
         test "ghostty.h Action.Key" {
             try lib.checkGhosttyHEnum(Key, "GHOSTTY_ACTION_");
