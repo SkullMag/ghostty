@@ -104,6 +104,32 @@ extension Ghostty.Action {
         let progress: UInt8?
     }
 
+    /// The lifecycle state of a coding agent (e.g. Claude Code) running in a
+    /// surface, reported via an OSC 777;agent shell hook.
+    enum AgentState {
+        case idle
+        case working
+        case waiting
+        case done
+
+        init(_ c: ghostty_action_agent_state_state_e) {
+            switch c {
+            case GHOSTTY_AGENT_STATE_WORKING:
+                self = .working
+            case GHOSTTY_AGENT_STATE_WAITING:
+                self = .waiting
+            case GHOSTTY_AGENT_STATE_DONE:
+                self = .done
+            default:
+                self = .idle
+            }
+        }
+
+        init(c: ghostty_action_agent_state_s) {
+            self.init(c.state)
+        }
+    }
+
     struct Scrollbar {
         let total: UInt64
         let offset: UInt64

@@ -36,6 +36,41 @@ extension Ghostty {
             }
         }
 
+        // The coding agent lifecycle state. We override the stored property to
+        // manage auto-clearing timers: `done` reverts to `idle` after a few
+        // seconds (so the checkmark is transient), and a long safety timeout
+        // clears a stale `working`/`waiting` if the agent never reports a
+        // terminal state (e.g. a missed SessionEnd hook).
+        override var agentState: Action.AgentState {
+            didSet {
+                agentStateTimer?.invalidate()
+                agentStateTimer = nil
+
+                // If an "attention" state arrives while the user is already
+                // looking at this surface, treat it as already seen so the tab
+                // indicator doesn't show something for the tab you're in.
+                if focused, agentState == .done || agentState == .waiting {
+                    agentState = .idle
+                    return
+                }
+
+                // `working`/`waiting` are active states; if the agent never
+                // reports a terminal state (e.g. a missed hook) clear them
+                // after a while so the indicator doesn't get stuck. `done`
+                // persists until the user views the tab (cleared in
+                // focusDidChange), and `idle` shows nothing.
+                switch agentState {
+                case .working, .waiting:
+                    agentStateTimer = Timer.scheduledTimer(withTimeInterval: 300.0, repeats: false) { [weak self] _ in
+                        self?.agentState = .idle
+                        self?.agentStateTimer = nil
+                    }
+                case .done, .idle:
+                    break
+                }
+            }
+        }
+
         // The currently active key sequence. The sequence is not active if this is empty.
         @Published var keySequence: [KeyboardShortcut] = []
 
@@ -203,6 +238,9 @@ extension Ghostty {
 
         // Timer to remove progress report after 15 seconds
         private var progressReportTimer: Timer?
+
+        // Timer managing agent-state auto-clearing (done -> idle, stale safety).
+        private var agentStateTimer: Timer?
 
         // This is the title from the terminal. This is nil if we're currently using
         // the terminal title as the main title property. If the title is set manually
@@ -406,6 +444,9 @@ extension Ghostty {
 
             // Cancel progress report timer
             progressReportTimer?.invalidate()
+
+            // Cancel agent-state timer
+            agentStateTimer?.invalidate()
         }
 
         override func endSearch() {
@@ -439,6 +480,12 @@ extension Ghostty {
 
                 // We unset our bell state if we gained focus
                 bell = false
+
+                // Mark any pending agent "attention" state as seen now that
+                // the user is viewing this surface.
+                if agentState == .done || agentState == .waiting {
+                    agentState = .idle
+                }
 
                 // Remove any notifications for this surface once we gain focus.
                 if !notificationIdentifiers.isEmpty {

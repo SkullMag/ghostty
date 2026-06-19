@@ -91,6 +91,10 @@ pub const Message = union(enum) {
     /// Report the progress of an action using a GUI element
     progress_report: terminal.osc.Command.ProgressReport,
 
+    /// Report a coding agent's (e.g. Claude Code) lifecycle state so the
+    /// apprt can show an activity indicator.
+    agent_state: terminal.osc.Command.AgentState,
+
     /// A command has started in the shell, start a timer.
     start_command,
 

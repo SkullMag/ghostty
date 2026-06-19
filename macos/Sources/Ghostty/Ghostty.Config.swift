@@ -402,6 +402,14 @@ extension Ghostty {
             return v
         }
 
+        var macosTabSidebarAgentStatus: Bool {
+            guard let config = self.config else { return true }
+            var v = true
+            let key = "macos-tab-sidebar-agent-status"
+            _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
+            return v
+        }
+
         var macosTitlebarProxyIcon: MacOSTitlebarProxyIcon {
             let defaultValue = MacOSTitlebarProxyIcon.visible
             guard let config = self.config else { return defaultValue }

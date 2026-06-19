@@ -32,6 +32,10 @@ extension Ghostty {
         // The progress report (if any)
         @Published var progressReport: Action.ProgressReport?
 
+        // The coding agent lifecycle state (e.g. Claude Code), reported via an
+        // OSC 777;agent shell hook. Defaults to idle (no agent activity).
+        @Published var agentState: Action.AgentState = .idle
+
         // The currently active key tables. Empty if no tables are active.
         @Published var keyTables: [String] = []
 

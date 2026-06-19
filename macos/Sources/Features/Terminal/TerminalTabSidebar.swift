@@ -28,6 +28,9 @@ class TabSidebarModel: ObservableObject {
         /// Whether this tab is pinned. Pinned tabs are kept at the front of the
         /// tab group.
         let isPinned: Bool
+        /// The aggregated coding-agent (e.g. Claude Code) lifecycle state across
+        /// the tab's surfaces, used to show an animated activity indicator.
+        let agentState: Ghostty.Action.AgentState
     }
 
     /// The tabs in display order.
@@ -63,6 +66,15 @@ class TabSidebarModel: ObservableObject {
 
     /// Combine subscription mirroring the shared queue task list into `queueTasks`.
     private var queueObservation: AnyCancellable?
+
+    /// Whether to show animated coding-agent activity indicators on tab rows
+    /// (`macos-tab-sidebar-agent-status`).
+    var showAgentStatus: Bool = false
+
+    /// Combine subscriptions to each surface's `$agentState` (and each tab
+    /// controller's `$surfaceTree`, so splits added/removed mid-session are
+    /// picked up). Rebuilt alongside the title observations.
+    private var agentObservations: Set<AnyCancellable> = []
 
     /// The window this sidebar belongs to. Weak because the window owns the
     /// controller which (transitively) owns this model.
@@ -121,6 +133,14 @@ class TabSidebarModel: ObservableObject {
         QueueManager.shared.start(maxItems: limit)
     }
 
+    /// Enable animated coding-agent activity indicators: arm observations of
+    /// each surface's agent state so the rows update live.
+    func enableAgentStatus() {
+        showAgentStatus = true
+        rebuildAgentObservations()
+        rebuildItems()
+    }
+
     /// The windows in this tab's group, or just our window if there is no group.
     private func windowsInGroup() -> [NSWindow] {
         guard let window else { return [] }
@@ -134,7 +154,65 @@ class TabSidebarModel: ObservableObject {
     /// current tab group state.
     func refresh() {
         rebuildObservations()
+        if showAgentStatus { rebuildAgentObservations() }
         rebuildItems()
+    }
+
+    /// (Re)subscribe to every tab surface's `$agentState` so the sidebar
+    /// reflects agent activity live, plus each tab controller's `$surfaceTree`
+    /// so splits added/removed mid-session re-arm these subscriptions.
+    private func rebuildAgentObservations() {
+        agentObservations.removeAll()
+        guard showAgentStatus else { return }
+
+        for w in windowsInGroup() {
+            guard let controller = w.windowController as? BaseTerminalController else { continue }
+
+            // Re-arm when the split tree changes. dropFirst() skips the
+            // immediate current-value emission so this doesn't recurse.
+            controller.$surfaceTree
+                .dropFirst()
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in
+                    guard let self else { return }
+                    self.rebuildAgentObservations()
+                    self.rebuildItems()
+                }
+                .store(in: &agentObservations)
+
+            for surfaceView in controller.surfaceTree {
+                surfaceView.$agentState
+                    .dropFirst()
+                    .receive(on: RunLoop.main)
+                    .sink { [weak self] _ in self?.rebuildItems() }
+                    .store(in: &agentObservations)
+            }
+        }
+    }
+
+    /// The aggregated agent state for a tab window: the highest-priority state
+    /// across all its surfaces (waiting > working > done > idle).
+    private func agentState(for window: NSWindow) -> Ghostty.Action.AgentState {
+        guard showAgentStatus,
+              let controller = window.windowController as? BaseTerminalController else {
+            return .idle
+        }
+        var result: Ghostty.Action.AgentState = .idle
+        for surfaceView in controller.surfaceTree {
+            if Self.agentPriority(surfaceView.agentState) > Self.agentPriority(result) {
+                result = surfaceView.agentState
+            }
+        }
+        return result
+    }
+
+    private static func agentPriority(_ state: Ghostty.Action.AgentState) -> Int {
+        switch state {
+        case .waiting: return 3
+        case .working: return 2
+        case .done: return 1
+        case .idle: return 0
+        }
     }
 
     /// (Re)register KVO observers for the current set of tab windows' titles.
@@ -179,7 +257,8 @@ class TabSidebarModel: ObservableObject {
                 title: title(for: w),
                 index: index,
                 shortcut: shortcut(for: index, config: config),
-                isPinned: (w as? TerminalWindow)?.isPinned ?? false)
+                isPinned: (w as? TerminalWindow)?.isPinned ?? false,
+                agentState: agentState(for: w))
         }
 
         let selected = window.tabGroup?.selectedWindow ?? window
@@ -609,7 +688,13 @@ struct TerminalTabSidebarView: View {
                     .truncationMode(.tail)
             }
 
-            Spacer(minLength: 0)
+            Spacer(minLength: 4)
+
+            // `working` shows on every tab (including the one you're in) so an
+            // active agent is always visible. The "attention" states (done /
+            // waiting) are cleared when you focus a tab (see focusDidChange),
+            // so they naturally never linger on the tab you're looking at.
+            agentIndicator(tab.agentState)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -646,6 +731,33 @@ struct TerminalTabSidebarView: View {
             }
             Button("Rename…") { startRename(tab) }
             Button("Close Tab") { model.close(tab.id) }
+        }
+    }
+
+    /// The animated activity indicator for a tab's coding-agent state:
+    /// a spinner while working, a pulsing dot while waiting for input, and a
+    /// brief check when done. Nothing is shown when idle.
+    @ViewBuilder
+    private func agentIndicator(_ state: Ghostty.Action.AgentState) -> some View {
+        switch state {
+        case .working:
+            ProgressView()
+                .controlSize(.small)
+                .scaleEffect(0.7)
+                .frame(width: 16, height: 16)
+                .help("Claude Code is working")
+        case .waiting:
+            PulsingDot(color: .orange)
+                .frame(width: 16, height: 16)
+                .help("Claude Code is waiting for input")
+        case .done:
+            Image(systemName: "checkmark.circle.fill")
+                .imageScale(.small)
+                .foregroundStyle(.green)
+                .frame(width: 16, height: 16)
+                .help("Claude Code finished")
+        case .idle:
+            EmptyView()
         }
     }
 
@@ -772,5 +884,24 @@ private struct TabReorderEndDropDelegate: DropDelegate {
         defer { draggingID = nil }
         model.commitOrder(model.tabs.map(\.id))
         return true
+    }
+}
+
+// MARK: - Agent status indicator
+
+/// A small dot that gently pulses its opacity, used to draw attention when a
+/// coding agent is waiting for the user's input.
+private struct PulsingDot: View {
+    let color: Color
+
+    @State private var pulsing = false
+
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: 8, height: 8)
+            .opacity(pulsing ? 0.25 : 1.0)
+            .animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: pulsing)
+            .onAppear { pulsing = true }
     }
 }
